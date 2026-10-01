@@ -10,3 +10,16 @@ tokio = { version = "1", features = ["macros", "rt-multi-thread"] }  # async run
 async-openai = { version = "=0.32.4", features = ["byot", "chat-completion"] }
 clap = { version = "4.3.14", features = ["derive"] }                 # CLI argument parsing
 serde_json = "1.0.149"                                                # JSON serialization/deserialization
+anyhow = "1.0.104"
+
+[lints.rust]
+elided_lifetimes_in_paths = "warn"
+
+[lints.clippy]
+unwrap_used = "deny"
+suspicious = { level = "warn", priority = -1 }
+complexity = { level = "warn", priority = -1 }
+pedantic = { level = "warn", priority = -1 }
+perf = { level = "warn", priority = -1 }
+correctness = "deny"
+style = "deny"
