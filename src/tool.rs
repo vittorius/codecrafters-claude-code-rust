@@ -1,9 +1,14 @@
-use std::path::Path;
+use std::{
+    fmt::{Debug, Display},
+    path::Path,
+};
 
 use anyhow::anyhow;
 use serde_json::{Value, json};
 use tokio::{fs, io};
 
+// TODO: turn ToolId into Tool enum with tool values as variants (i.e. Read(ReadTool) etc.)
+#[derive(Debug)]
 pub enum ToolId {
     Read,
 }
@@ -16,6 +21,12 @@ impl TryFrom<&str> for ToolId {
             "Read" => Ok(ToolId::Read),
             _ => Err(anyhow!("Unknown tool id: {value}")),
         }
+    }
+}
+
+impl Display for ToolId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        Debug::fmt(&self, f)
     }
 }
 

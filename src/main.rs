@@ -16,6 +16,8 @@ struct Args {
     prompt: String,
 }
 
+// TODO: try rewriting this challenge using `types` and/or *-types feature(s) from the openai-async crate
+
 #[tokio::main]
 async fn main() -> Result<()> {
     let args = Args::parse();
@@ -34,56 +36,82 @@ async fn main() -> Result<()> {
 
     let client = Client::with_config(config);
 
-    #[allow(unused_variables)]
-    let response: Value = client
-        .chat()
-        .create_byot(json!({
-            "messages": [
-                {
-                    "role": "user",
-                    "content": args.prompt
-                }
-            ],
-            "model": "anthropic/claude-haiku-4.5",
-            "tools": [
-               Read::spec()
-            ]
-        }))
-        .await?;
+    agent_loop(&client, &args.prompt).await?;
 
     // You can use print statements as follows for debugging, they'll be visible when running tests.
     eprintln!("Logs from your program will appear here!");
 
-    if let Some(tool_calls) = response["choices"][0]["message"]["tool_calls"].as_array() {
-        for tool_call in tool_calls {
-            if let Some(call_type) = tool_call["type"].as_str()
-                && call_type == "function"
-            {
-                let tool_id = ToolId::try_from(
-                    tool_call["function"]["name"]
-                        .as_str()
-                        .ok_or_else(|| anyhow!("Failed to deserialize tool name"))?,
-                )?;
-                let arguments = tool_call["function"]["arguments"]
-                    .as_str()
-                    .ok_or_else(|| anyhow!("Failed to deserialize tool arguments"))?;
-                let arguments = from_str::<Value>(arguments)?;
-                let arguments = arguments
-                    .as_object()
-                    .ok_or_else(|| anyhow!("Failed to parse tool arguments"))?;
+    Ok(())
+}
 
-                let result = call_tool(tool_id, arguments).await?;
-                println!("{result}");
-            }
+async fn agent_loop(client: &Client<OpenAIConfig>, prompt: &str) -> Result<()> {
+    let mut messages: Vec<Value> = vec![json!(
+        {
+            "role": "user",
+            "content": prompt
         }
-    } else if let Some(content) = response["choices"][0]["message"]["content"].as_str() {
-        println!("{content}");
+    )];
+
+    loop {
+        // NOTE: we always have a single choice the response for this challenge (use `response["choices"][0]`)
+
+        let response: Value = send_request(client, &messages).await?;
+        messages.push(response["choices"][0]["message"].clone());
+
+        if let Some(tool_calls) = response["choices"][0]["message"]["tool_calls"].as_array()
+            && !tool_calls.is_empty()
+        {
+            for tool_call in tool_calls {
+                if let Some(call_type) = tool_call["type"].as_str()
+                    && call_type == "function"
+                {
+                    let tool_id = ToolId::try_from(
+                        tool_call["function"]["name"]
+                            .as_str()
+                            .ok_or_else(|| anyhow!("Failed to deserialize tool name"))?,
+                    )?;
+                    let arguments = tool_call["function"]["arguments"]
+                        .as_str()
+                        .ok_or_else(|| anyhow!("Failed to deserialize tool arguments"))?;
+                    let arguments = from_str::<Value>(arguments)?;
+                    let arguments = arguments
+                        .as_object()
+                        .ok_or_else(|| anyhow!("Failed to parse tool arguments"))?;
+
+                    let result = call_tool(tool_id, arguments).await?;
+                    messages.push(json!(
+                        {
+                          "role": "tool",
+                          "tool_call_id": tool_call["id"],
+                          "content": result
+                        }
+                    ));
+                }
+            }
+        } else if let Some(content) = response["choices"][0]["message"]["content"].as_str() {
+            println!("{content}");
+            break;
+        }
     }
 
     Ok(())
 }
 
-// TODO: may change the String result type later
+async fn send_request(client: &Client<OpenAIConfig>, messages: &[Value]) -> Result<Value> {
+    client
+        .chat()
+        .create_byot(json!({
+            "messages": messages,
+            "model": "anthropic/claude-haiku-4.5",
+            "tools": [
+               Read::spec()
+            ]
+        }))
+        .await
+        .map_err(Into::into)
+}
+
+// TODO: may change the String result value type later
 async fn call_tool(tool_id: ToolId, arguments: &Map<String, Value>) -> Result<String> {
     match tool_id {
         ToolId::Read => {
