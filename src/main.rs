@@ -1,9 +1,9 @@
 use async_openai::{Client, config::OpenAIConfig};
 use clap::Parser;
-use serde_json::{Map, Value, from_str, json};
-use std::{env, path::Path, process};
+use serde_json::{Value, from_str, json};
+use std::{env, process};
 
-use crate::tool::{Read, ToolId};
+use crate::tool::Tool;
 
 use anyhow::{Result, anyhow};
 
@@ -65,7 +65,7 @@ async fn agent_loop(client: &Client<OpenAIConfig>, prompt: &str) -> Result<()> {
                 if let Some(call_type) = tool_call["type"].as_str()
                     && call_type == "function"
                 {
-                    let tool_id = ToolId::try_from(
+                    let tool = Tool::try_from(
                         tool_call["function"]["name"]
                             .as_str()
                             .ok_or_else(|| anyhow!("Failed to deserialize tool name"))?,
@@ -78,7 +78,7 @@ async fn agent_loop(client: &Client<OpenAIConfig>, prompt: &str) -> Result<()> {
                         .as_object()
                         .ok_or_else(|| anyhow!("Failed to parse tool arguments"))?;
 
-                    let result = call_tool(tool_id, arguments).await?;
+                    let result = tool.call(arguments).await?;
                     messages.push(json!(
                         {
                           "role": "tool",
@@ -103,24 +103,8 @@ async fn send_request(client: &Client<OpenAIConfig>, messages: &[Value]) -> Resu
         .create_byot(json!({
             "messages": messages,
             "model": "anthropic/claude-haiku-4.5",
-            "tools": [
-               Read::spec()
-            ]
+            "tools": Vec::from_iter(Tool::all().iter().map(Tool::spec))
         }))
         .await
         .map_err(Into::into)
-}
-
-// TODO: may change the String result value type later
-async fn call_tool(tool_id: ToolId, arguments: &Map<String, Value>) -> Result<String> {
-    match tool_id {
-        ToolId::Read => {
-            // TODO: think of moving params parsing inside ::call
-            Read::call(Path::new(arguments["file_path"].as_str().ok_or_else(
-                || anyhow!("Failed to deserialize file_path argument"),
-            )?))
-            .await
-            .map_err(Into::into)
-        }
-    }
 }
