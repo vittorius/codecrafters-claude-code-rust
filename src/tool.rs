@@ -1,26 +1,36 @@
 use std::{
     fmt::{Debug, Display},
     path::Path,
+    process::Stdio,
     sync::LazyLock,
 };
 
 use anyhow::anyhow;
 use anyhow::{Ok, Result};
 use serde_json::{Map, Value, json};
-use tokio::fs;
+use tokio::{fs, process::Command};
 
-// TODO: turn ToolId into Tool enum with tool values as variants (i.e. Read(ReadTool) etc.)
+macro_rules! tool_arg {
+    ($map:ident -> $param:expr) => {
+        $map[$param]
+            .as_str()
+            .ok_or_else(|| anyhow!("Failed to deserialize \"{0}\" tool argument", $param))?
+    };
+}
+
 #[derive(Debug)]
 pub enum Tool {
     Read,
     Write,
+    Bash,
 }
 
 impl Tool {
-    pub async fn call(&self, arguments: &Map<String, Value>) -> Result<Value> {
+    pub async fn call(&self, arguments: &Map<String, Value>) -> Result<String> {
         match self {
-            Tool::Read => self.call_read_tool(arguments).await.map(Into::into),
-            Tool::Write => self.call_write_tool(arguments).await.map(Into::into),
+            Tool::Read => self.call_read_tool(arguments).await,
+            Tool::Write => self.call_write_tool(arguments).await,
+            Tool::Bash => self.call_bash_tool(arguments).await,
         }
     }
 
@@ -64,6 +74,23 @@ impl Tool {
                 }
               }
             }),
+            Tool::Bash => json!( {
+                  "type": "function",
+                  "function": {
+                    "name": "Bash",
+                    "description": "Execute a shell command",
+                    "parameters": {
+                      "type": "object",
+                      "required": ["command"],
+                      "properties": {
+                        "command": {
+                          "type": "string",
+                          "description": "The command to execute"
+                        }
+                      }
+                    }
+                  }
+                } ),
         }
     }
 
@@ -73,6 +100,7 @@ impl Tool {
 
             let read_added: () = tools.push(Tool::Read);
             let write_added: () = tools.push(Tool::Write);
+            let bash_added: () = tools.push(Tool::Bash);
 
             debug_assert!(tools.iter().all(|value| {
                 match value {
@@ -82,6 +110,10 @@ impl Tool {
                     }
                     Tool::Write => {
                         let () = write_added;
+                        true
+                    }
+                    Tool::Bash => {
+                        let () = bash_added;
                         true
                     }
                 }
@@ -94,29 +126,44 @@ impl Tool {
     }
 
     async fn call_read_tool(&self, arguments: &Map<String, Value>) -> Result<String> {
-        // TODO: use declarative macro for this
-        let path = Path::new(
-            arguments["file_path"]
-                .as_str()
-                .ok_or_else(|| anyhow!("Failed to deserialize file_path argument"))?,
-        );
+        let path = Path::new(tool_arg!(arguments->"file_path"));
 
         fs::read_to_string(path).await.map_err(Into::into)
     }
 
     async fn call_write_tool(&self, arguments: &Map<String, Value>) -> Result<String> {
-        let path = Path::new(
-            arguments["file_path"]
-                .as_str()
-                .ok_or_else(|| anyhow!("Failed to deserialize file_path argument"))?,
-        );
-        let contents = arguments["content"]
-            .as_str()
-            .ok_or_else(|| anyhow!("Failed to deserialize content argument"))?;
+        let path = Path::new(tool_arg!(arguments->"file_path"));
+        let contents = tool_arg!(arguments->"content");
 
         fs::write(path, contents).await?;
 
         Ok(contents.to_owned())
+    }
+
+    async fn call_bash_tool(&self, arguments: &Map<String, Value>) -> Result<String> {
+        let mut command_with_args = tool_arg!(arguments->"command").split(' ');
+
+        let mut cmd = Command::new(
+            command_with_args
+                .next()
+                .ok_or_else(|| anyhow!("Command is empty"))?,
+        );
+        for arg in command_with_args {
+            cmd.arg(arg);
+        }
+        
+        let output = cmd
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()?
+            .wait_with_output()
+            .await?;
+        let mut out_string = String::new();
+
+        out_string.push_str(&String::from_utf8(output.stdout)?);
+        out_string.push_str(&String::from_utf8(output.stderr)?);
+
+        Ok(out_string)
     }
 }
 
@@ -127,6 +174,7 @@ impl TryFrom<&str> for Tool {
         match value {
             "Read" => Ok(Tool::Read),
             "Write" => Ok(Tool::Write),
+            "Bash" => Ok(Tool::Bash),
             _ => Err(anyhow!("Unknown tool: {value}")),
         }
     }
