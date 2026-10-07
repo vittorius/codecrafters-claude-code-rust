@@ -3,12 +3,6 @@ use std::{collections::HashMap, path::Path};
 use anyhow::{Result, anyhow};
 use tokio::fs;
 
-// struct Skill<'a> {
-//     name: &'a str,
-//     description: &'a str,
-//     body: &'a str,
-// }
-
 pub struct Skill {
     pub name: String,
     pub description: String,
@@ -16,7 +10,9 @@ pub struct Skill {
 }
 
 impl Skill {
-    fn new(source: &str) -> Result<Self> {
+    // passing source by value because we make the Skill own the fragments of the source String instead
+    #[allow(clippy::needless_pass_by_value)]
+    fn new(source: String) -> Result<Self> {
         let mut delim_count = 0;
         let mut in_heading = false;
         let mut total_bytes = 0;
@@ -81,7 +77,7 @@ pub async fn build_skills() -> Result<HashMap<String, Skill>> {
     if skills_path.exists() {
         walk(skills_path, &mut async |path| {
             let source = fs::read_to_string(path).await?;
-            let skill = Skill::new(&source)?;
+            let skill = Skill::new(source)?;
             skills.insert(skill.name.clone(), skill);
 
             Ok(())
@@ -107,7 +103,7 @@ mod tests {
                             Gulp it.\n\
                             Repeat until the entire banana it eaten.";
 
-        let skill = Skill::new(source)?;
+        let skill = Skill::new(source.to_owned())?;
 
         assert_eq!(skill.name, "banana");
         assert_eq!(skill.description, "Instructs how to eat a banana.");
