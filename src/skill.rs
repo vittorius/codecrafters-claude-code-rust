@@ -60,10 +60,7 @@ impl Skill {
 
 pub async fn skills() -> Result<Vec<Skill>> {
     async fn walk(dir: &Path, visit: &mut impl AsyncFnMut(&Path) -> Result<()>) -> Result<()> {
-        eprintln!("pwd: {}", std::env::current_dir()?.as_path().display());
-        eprintln!("dir: {}", dir.display());
         let mut dirs = fs::read_dir(dir).await?;
-        eprintln!("read_dir {} successful", dir.display());
         while let Some(entry) = dirs.next_entry().await? {
             let path = entry.path();
 
