@@ -1,4 +1,4 @@
-use std::path::Path;
+use std::{collections::HashMap, path::Path};
 
 use anyhow::{Result, anyhow};
 use tokio::fs;
@@ -58,7 +58,7 @@ impl Skill {
     }
 }
 
-pub async fn skills() -> Result<Vec<Skill>> {
+pub async fn build_skills() -> Result<HashMap<String, Skill>> {
     async fn walk(dir: &Path, visit: &mut impl AsyncFnMut(&Path) -> Result<()>) -> Result<()> {
         let mut dirs = fs::read_dir(dir).await?;
         while let Some(entry) = dirs.next_entry().await? {
@@ -75,11 +75,12 @@ pub async fn skills() -> Result<Vec<Skill>> {
         Ok(())
     }
 
-    let mut skills: Vec<Skill> = Vec::new();
+    let mut skills: HashMap<String, Skill> = HashMap::new();
 
     walk(Path::new(".claude/skills"), &mut async |path| {
         let source = fs::read_to_string(path).await?;
-        skills.push(Skill::new(&source)?);
+        let skill = Skill::new(&source)?;
+        skills.insert(skill.name.clone(), skill);
 
         Ok(())
     })

@@ -1,9 +1,12 @@
 use async_openai::{Client, config::OpenAIConfig};
 use clap::Parser;
 use serde_json::{Value, from_str, json};
-use std::{env, fmt::Write, process};
+use std::{collections::HashMap, env, fmt::Write, process, sync::OnceLock};
 
-use crate::{skill::skills, tool::Tool};
+use crate::{
+    skill::Skill,
+    tool::Tool,
+};
 
 use anyhow::{Result, anyhow};
 
@@ -19,8 +22,13 @@ struct Args {
 
 // TODO: try rewriting this challenge using `types` and/or *-types feature(s) from the openai-async crate
 
+static SKILLS: OnceLock<HashMap<String, Skill>> = OnceLock::new();
+
 #[tokio::main]
 async fn main() -> Result<()> {
+    let skills = skill::build_skills().await?;
+    SKILLS.get_or_init(move || skills);
+
     let args = Args::parse();
 
     let base_url = env::var("OPENROUTER_BASE_URL")
@@ -47,8 +55,8 @@ async fn main() -> Result<()> {
 
 async fn agent_loop(client: &Client<OpenAIConfig>, prompt: &str) -> Result<()> {
     let mut messages: Vec<Value> = vec![
-        json!({ "role": "system", "content": skills_advertisement().await? }),
-        json!({ "role": "user", "content": prompt }),
+        json!({ "role": "system", "content": skills_advertisement()? }),
+        json!({ "role": "user", "content": message_prompt(prompt)? }),
     ];
 
     loop {
@@ -96,6 +104,17 @@ async fn agent_loop(client: &Client<OpenAIConfig>, prompt: &str) -> Result<()> {
     Ok(())
 }
 
+fn message_prompt(prompt: &str) -> Result<&str> {
+    if let Some(skill_name) = prompt.strip_prefix('/') {
+        skills()
+            .get(skill_name)
+            .map(|skill| skill.body.as_str())
+            .ok_or_else(|| anyhow!("Skill {skill_name} not found"))
+    } else {
+        Ok(prompt)
+    }
+}
+
 async fn send_request(client: &Client<OpenAIConfig>, messages: &[Value]) -> Result<Value> {
     client
         .chat()
@@ -108,10 +127,14 @@ async fn send_request(client: &Client<OpenAIConfig>, messages: &[Value]) -> Resu
         .map_err(Into::into)
 }
 
-async fn skills_advertisement() -> Result<String> {
+fn skills() -> &'static HashMap<String, Skill> {
+    SKILLS.get().expect("Skills must be initialized")
+}
+
+fn skills_advertisement() -> Result<String> {
     let mut message = String::from("You have access to the following skills:\n\n");
 
-    for skill in skills().await? {
+    for skill in SKILLS.get().expect("Skills must be initialized").values() {
         writeln!(message, "- {}: {}", skill.name, skill.description)?;
     }
 
