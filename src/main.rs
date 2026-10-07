@@ -1,12 +1,13 @@
 use async_openai::{Client, config::OpenAIConfig};
 use clap::Parser;
 use serde_json::{Value, from_str, json};
-use std::{env, process};
+use std::{env, fmt::Write, process};
 
-use crate::tool::Tool;
+use crate::{skill::skills, tool::Tool};
 
 use anyhow::{Result, anyhow};
 
+mod skill;
 mod tool;
 
 #[derive(Parser)]
@@ -45,12 +46,10 @@ async fn main() -> Result<()> {
 }
 
 async fn agent_loop(client: &Client<OpenAIConfig>, prompt: &str) -> Result<()> {
-    let mut messages: Vec<Value> = vec![json!(
-        {
-            "role": "user",
-            "content": prompt
-        }
-    )];
+    let mut messages: Vec<Value> = vec![
+        json!({ "role": "system", "content": skills_advertisement().await? }),
+        json!({ "role": "user", "content": prompt }),
+    ];
 
     loop {
         // NOTE: we always have a single choice the response for this challenge (use `response["choices"][0]`)
@@ -107,4 +106,14 @@ async fn send_request(client: &Client<OpenAIConfig>, messages: &[Value]) -> Resu
         }))
         .await
         .map_err(Into::into)
+}
+
+async fn skills_advertisement() -> Result<String> {
+    let mut message = String::from("You have access to the following skills:\n\n");
+
+    for skill in skills().await? {
+        writeln!(message, "- {}: {}", skill.name, skill.description)?;
+    }
+
+    Ok(message)
 }
