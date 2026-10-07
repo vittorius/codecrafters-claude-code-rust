@@ -77,14 +77,17 @@ pub async fn build_skills() -> Result<HashMap<String, Skill>> {
 
     let mut skills: HashMap<String, Skill> = HashMap::new();
 
-    walk(Path::new(".claude/skills"), &mut async |path| {
-        let source = fs::read_to_string(path).await?;
-        let skill = Skill::new(&source)?;
-        skills.insert(skill.name.clone(), skill);
+    let skills_path = Path::new(".claude/skills");
+    if skills_path.exists() {
+        walk(skills_path, &mut async |path| {
+            let source = fs::read_to_string(path).await?;
+            let skill = Skill::new(&source)?;
+            skills.insert(skill.name.clone(), skill);
 
-        Ok(())
-    })
-    .await?;
+            Ok(())
+        })
+        .await?;
+    }
 
     Ok(skills)
 }
