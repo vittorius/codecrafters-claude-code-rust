@@ -6,13 +6,13 @@ use tokio::fs;
 pub struct Skill {
     pub name: String,
     pub description: String,
-    pub body: String,
+    body: String,
 }
 
 impl Skill {
     // passing source by value because we make the Skill own the fragments of the source String instead
-    #[allow(clippy::needless_pass_by_value)]
-    fn new(source: String) -> Result<Self> {
+    #[allow(clippy::needless_pass_by_value)] // TODO: remove
+    pub fn new(source: String) -> Result<Self> {
         let mut delim_count = 0;
         let mut in_heading = false;
         let mut total_bytes = 0;
@@ -51,6 +51,16 @@ impl Skill {
                 .map(str::to_owned)
                 .ok_or_else(|| anyhow!("Missing body"))?,
         })
+    }
+
+    pub fn body(&self, args_str: &str) -> String {
+        let mut result = self.body.replace("$ARGUMENTS", args_str);
+        for (i, arg) in args_str.split(' ').enumerate() {
+            result = result
+                .replace(&format!("$ARGUMENTS[{i}]"), arg)
+                .replace(&format!("${i}"), arg);
+        }
+        result
     }
 }
 

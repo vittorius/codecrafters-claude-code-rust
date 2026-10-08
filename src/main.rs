@@ -3,10 +3,7 @@ use clap::Parser;
 use serde_json::{Value, from_str, json};
 use std::{collections::HashMap, env, fmt::Write, process, sync::OnceLock};
 
-use crate::{
-    skill::Skill,
-    tool::Tool,
-};
+use crate::{skill::Skill, tool::Tool};
 
 use anyhow::{Result, anyhow};
 
@@ -53,10 +50,10 @@ async fn main() -> Result<()> {
     Ok(())
 }
 
-async fn agent_loop(client: &Client<OpenAIConfig>, prompt: &str) -> Result<()> {
+async fn agent_loop(client: &Client<OpenAIConfig>, raw_prompt: &str) -> Result<()> {
     let mut messages: Vec<Value> = vec![
         json!({ "role": "system", "content": skills_advertisement()? }),
-        json!({ "role": "user", "content": message_prompt(prompt)? }),
+        json!({ "role": "user", "content": prompt(raw_prompt)? }),
     ];
 
     loop {
@@ -104,14 +101,15 @@ async fn agent_loop(client: &Client<OpenAIConfig>, prompt: &str) -> Result<()> {
     Ok(())
 }
 
-fn message_prompt(prompt: &str) -> Result<&str> {
-    if let Some(skill_name) = prompt.strip_prefix('/') {
+fn prompt(raw_prompt: &str) -> Result<String> {
+    if let Some(skill_name) = raw_prompt.strip_prefix('/') {
+        let (skill_name, skill_args) = skill_name.split_once(' ').unwrap_or((skill_name, ""));
         skills()
             .get(skill_name)
-            .map(|skill| skill.body.as_str())
+            .map(|skill| skill.body(skill_args))
             .ok_or_else(|| anyhow!("Skill {skill_name} not found"))
     } else {
-        Ok(prompt)
+        Ok(raw_prompt.to_owned())
     }
 }
 
