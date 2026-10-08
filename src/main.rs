@@ -51,10 +51,13 @@ async fn main() -> Result<()> {
 }
 
 async fn agent_loop(client: &Client<OpenAIConfig>, raw_prompt: &str) -> Result<()> {
-    let mut messages: Vec<Value> = vec![
-        json!({ "role": "system", "content": skills_advertisement()? }),
-        json!({ "role": "user", "content": prompt(raw_prompt)? }),
-    ];
+    let mut messages: Vec<Value> =
+        vec![json!({ "role": "system", "content": skills_advertisement()? })];
+    messages.extend(
+        prompt_messages(raw_prompt)
+            .into_iter()
+            .map(|msg| json!({ "role": "user", "content": msg })),
+    );
 
     loop {
         // NOTE: we always have a single choice the response for this challenge (use `response["choices"][0]`)
@@ -101,16 +104,30 @@ async fn agent_loop(client: &Client<OpenAIConfig>, raw_prompt: &str) -> Result<(
     Ok(())
 }
 
-fn prompt(raw_prompt: &str) -> Result<String> {
-    if let Some(skill_name) = raw_prompt.strip_prefix('/') {
-        let (skill_name, skill_args) = skill_name.split_once(' ').unwrap_or((skill_name, ""));
-        skills()
-            .get(skill_name)
-            .map(|skill| skill.body(skill_args))
-            .ok_or_else(|| anyhow!("Skill {skill_name} not found"))
-    } else {
-        Ok(raw_prompt.to_owned())
+fn prompt_messages(raw_prompt: &str) -> Vec<String> {
+    let mut all = raw_prompt;
+    let mut head;
+    let mut tail;
+    let mut skills = Vec::<&Skill>::new();
+    loop {
+        (head, tail) = all.split_once(' ').unwrap_or((all, ""));
+
+        if head.starts_with('/')
+            && let Some(skill) = crate::skills().get(&head[1..])
+        {
+            skills.push(skill);
+
+            all = tail;
+        } else {
+            break;
+        }
     }
+
+    if skills.is_empty() {
+        return vec![raw_prompt.to_owned()];
+    }
+
+    skills.into_iter().map(|skill| skill.body(all)).collect()
 }
 
 async fn send_request(client: &Client<OpenAIConfig>, messages: &[Value]) -> Result<Value> {
