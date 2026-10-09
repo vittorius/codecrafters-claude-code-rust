@@ -62,7 +62,9 @@ async fn agent_loop(client: &Client<OpenAIConfig>, raw_prompt: &str) -> Result<(
     loop {
         // NOTE: we always have a single choice the response for this challenge (use `response["choices"][0]`)
 
+        // eprintln!("request: {messages:#?}");
         let response: Value = send_request(client, &messages).await?;
+        // eprintln!("response: {response:#?}");
         messages.push(response["choices"][0]["message"].clone());
 
         if let Some(tool_calls) = response["choices"][0]["message"]["tool_calls"].as_array()
