@@ -9,3 +9,4 @@
 set -e # Exit on failure
 
 exec /tmp/codecrafters-build-claude-code-rust/release/codecrafters-claude-code "$@"
+# RUST_BACKTRACE=1 exec /tmp/codecrafters-build-claude-code-rust/debug/codecrafters-claude-code "$@"

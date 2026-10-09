@@ -9,3 +9,4 @@
 set -e # Exit on failure
 
 cargo build --release --target-dir=/tmp/codecrafters-build-claude-code-rust --manifest-path Cargo.toml
+# cargo build --target-dir=/tmp/codecrafters-build-claude-code-rust --manifest-path Cargo.toml
