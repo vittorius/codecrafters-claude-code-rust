@@ -141,17 +141,12 @@ impl Tool {
     }
 
     async fn call_bash_tool(&self, arguments: &Map<String, Value>) -> Result<String> {
-        let mut command_with_args = tool_arg!(arguments->"command").split(' ');
+        let command_line = tool_arg!(arguments->"command");
 
-        let mut cmd = Command::new(
-            command_with_args
-                .next()
-                .ok_or_else(|| anyhow!("Command is empty"))?,
-        );
-        for arg in command_with_args {
-            cmd.arg(arg);
-        }
-        
+        let mut cmd = Command::new("bash");
+        cmd.arg("-c");
+        cmd.arg(command_line);
+
         let output = cmd
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
