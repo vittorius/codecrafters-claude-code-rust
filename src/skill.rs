@@ -64,17 +64,21 @@ impl Skill {
 }
 
 pub async fn build_skills() -> Result<HashMap<String, Skill>> {
-    async fn walk(dir: &Path, visit: &mut impl AsyncFnMut(&Path) -> Result<()>) -> Result<()> {
-        let mut dirs = fs::read_dir(dir).await?;
-        while let Some(entry) = dirs.next_entry().await? {
-            let path = entry.path();
+    async fn walk(
+        base_path: &Path,
+        visit: &mut impl AsyncFnMut(&Path) -> Result<()>,
+    ) -> Result<()> {
+        let mut dirs = fs::read_dir(base_path).await?;
+        while let Some(skill_dir_entry) = dirs.next_entry().await? {
+            let path = skill_dir_entry.path();
 
             // file_type() doesn't follow symlinks, so this avoids symlink loops
-            let file_type = entry.file_type().await?;
+            let file_type = skill_dir_entry.file_type().await?;
             if file_type.is_dir() {
-                Box::pin(walk(&path, visit)).await?;
-            } else if file_type.is_file() {
-                visit(&path).await?;
+                let skill_file_path = path.join("SKILL.md");
+                if skill_file_path.exists() {
+                    visit(&skill_file_path).await?;
+                }
             }
         }
         Ok(())
