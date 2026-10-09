@@ -3,6 +3,9 @@ use std::{collections::HashMap, path::Path};
 use anyhow::{Result, anyhow};
 use tokio::fs;
 
+const BASE_PATH: &str = ".claude/skills";
+
+#[derive(Debug)]
 pub struct Skill {
     pub name: String,
     pub description: String,
@@ -59,7 +62,11 @@ impl Skill {
                 .replace(&format!("$ARGUMENTS[{i}]"), arg)
                 .replace(&format!("${i}"), arg);
         }
-        result
+        format!(
+            "Paths in the instructions below are relative to the {}/{} folder.\n\
+            {}",
+            BASE_PATH, self.name, result
+        )
     }
 }
 
@@ -86,7 +93,7 @@ pub async fn build_skills() -> Result<HashMap<String, Skill>> {
 
     let mut skills: HashMap<String, Skill> = HashMap::new();
 
-    let skills_path = Path::new(".claude/skills");
+    let skills_path = Path::new(BASE_PATH);
     if skills_path.exists() {
         walk(skills_path, &mut async |path| {
             let source = fs::read_to_string(path).await?;
