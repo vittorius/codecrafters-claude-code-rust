@@ -138,6 +138,7 @@ async fn send_request(client: &Client<OpenAIConfig>, messages: &[Value]) -> Resu
         .create_byot(json!({
             "messages": messages,
             "model": "anthropic/claude-haiku-4.5",
+            // "model": "nvidia/nemotron-3-ultra-550b-a55b:free",
             "tools": Vec::from_iter(Tool::all().iter().map(Tool::spec))
         }))
         .await
