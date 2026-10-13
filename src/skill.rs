@@ -114,14 +114,16 @@ mod tests {
 
     #[test]
     fn test_generic_skill_parse_success() -> Result<()> {
-        let source = "---\n\
-                            name: banana\n\
-                            description: Instructs how to eat a banana.\n\
-                            ---\n\
-                            Remove the banana peel.\n\
-                            Then bite the banana and chew the piece you've bitten.\n\
-                            Gulp it.\n\
-                            Repeat until the entire banana it eaten.";
+        #[rustfmt::skip]
+        let source =
+            "---\n\
+            name: banana\n\
+            description: Instructs how to eat a banana.\n\
+            ---\n\
+            Remove the banana peel.\n\
+            Then bite the banana and chew the piece you've bitten.\n\
+            Gulp it.\n\
+            Repeat until the entire banana it eaten.";
 
         let skill = Skill::new(source)?;
 

@@ -20,7 +20,7 @@ macro_rules! tool_arg {
 
 #[derive(Debug)]
 pub enum Tool {
-    Read,
+    Read
     Write,
     Bash,
 }
