@@ -19,6 +19,7 @@ struct Args {
 
 // TODO: try rewriting this challenge using `types` and/or *-types feature(s) from the openai-async crate
 
+// TODO: turn into a Skill::all() method similar to the one of Tool
 static SKILLS: OnceLock<HashMap<String, Skill>> = OnceLock::new();
 
 #[tokio::main]
@@ -87,7 +88,9 @@ async fn agent_loop(client: &Client<OpenAIConfig>, raw_prompt: &str) -> Result<(
                         .as_object()
                         .ok_or_else(|| anyhow!("Failed to parse tool arguments"))?;
 
-                    let result = tool.call(arguments).await?;
+                    let result = tool
+                        .call(arguments, SKILLS.get().expect("Skills must be initialized"))
+                        .await?;
                     messages.push(json!(
                         {
                           "role": "tool",
@@ -155,6 +158,12 @@ fn skills_advertisement() -> Result<String> {
     for skill in SKILLS.get().expect("Skills must be initialized").values() {
         writeln!(message, "- {}: {}", skill.name, skill.description)?;
     }
+
+    writeln!(
+        message,
+        "If a skill matches the user's request, call the Skill tool with \
+        its name and follow the instructions it returns."
+    )?;
 
     Ok(message)
 }

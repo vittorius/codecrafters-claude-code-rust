@@ -1,4 +1,5 @@
 use std::{
+    collections::HashMap,
     fmt::{Debug, Display},
     path::Path,
     process::Stdio,
@@ -10,6 +11,8 @@ use anyhow::{Ok, Result};
 use serde_json::{Map, Value, json};
 use tokio::{fs, process::Command};
 
+use crate::skill::Skill;
+
 macro_rules! tool_arg {
     ($map:ident -> $param:expr) => {
         $map[$param]
@@ -18,19 +21,33 @@ macro_rules! tool_arg {
     };
 }
 
-#[derive(Debug)]
-pub enum Tool {
-    Read
-    Write,
-    Bash,
+macro_rules! tool_arg_or_default {
+    ($map:ident -> $param:expr) => {
+        $map.get($param).and_then(|v| v.as_str()).unwrap_or("")
+    };
 }
 
+#[derive(Debug)]
+pub enum Tool {
+    Read,
+    Write,
+    Bash,
+    Skill,
+}
+
+type ToolArgs = Map<String, Value>;
+
 impl Tool {
-    pub async fn call(&self, arguments: &Map<String, Value>) -> Result<String> {
+    pub async fn call(
+        &self,
+        arguments: &ToolArgs,
+        available_skills: &HashMap<String, Skill>,
+    ) -> Result<String> {
         match self {
             Tool::Read => self.call_read_tool(arguments).await,
             Tool::Write => self.call_write_tool(arguments).await,
             Tool::Bash => self.call_bash_tool(arguments).await,
+            Tool::Skill => self.call_skill_tool(arguments, available_skills),
         }
     }
 
@@ -91,6 +108,20 @@ impl Tool {
                     }
                   }
                 } ),
+            Tool::Skill => json!( { "type": "function",
+                    "function": {
+                      "name": "Skill",
+                      "description": "Load a skill's instructions into the conversation",
+                      "parameters": {
+                        "type": "object",
+                        "required": ["name"],
+                        "properties": {
+                          "name": { "type": "string", "description": "The name of the skill to use" },
+                          "args": { "type": "string", "description": "Optional arguments for the skill" }
+                        }
+                      }
+                    }
+                  } ),
         }
     }
 
@@ -101,6 +132,7 @@ impl Tool {
             let read_added: () = tools.push(Tool::Read);
             let write_added: () = tools.push(Tool::Write);
             let bash_added: () = tools.push(Tool::Bash);
+            let skill_added: () = tools.push(Tool::Skill);
 
             debug_assert!(tools.iter().all(|value| {
                 match value {
@@ -116,6 +148,10 @@ impl Tool {
                         let () = bash_added;
                         true
                     }
+                    Tool::Skill => {
+                        let () = skill_added;
+                        true
+                    }
                 }
             }));
 
@@ -125,13 +161,13 @@ impl Tool {
         ALL.as_ref()
     }
 
-    async fn call_read_tool(&self, arguments: &Map<String, Value>) -> Result<String> {
+    async fn call_read_tool(&self, arguments: &ToolArgs) -> Result<String> {
         let path = Path::new(tool_arg!(arguments->"file_path"));
 
         fs::read_to_string(path).await.map_err(Into::into)
     }
 
-    async fn call_write_tool(&self, arguments: &Map<String, Value>) -> Result<String> {
+    async fn call_write_tool(&self, arguments: &ToolArgs) -> Result<String> {
         let path = Path::new(tool_arg!(arguments->"file_path"));
         let contents = tool_arg!(arguments->"content");
 
@@ -140,7 +176,7 @@ impl Tool {
         Ok(contents.to_owned())
     }
 
-    async fn call_bash_tool(&self, arguments: &Map<String, Value>) -> Result<String> {
+    async fn call_bash_tool(&self, arguments: &ToolArgs) -> Result<String> {
         let command_line = tool_arg!(arguments->"command");
 
         let mut cmd = Command::new("bash");
@@ -160,6 +196,22 @@ impl Tool {
 
         Ok(out_string)
     }
+
+    #[allow(clippy::unused_self)]
+    fn call_skill_tool(
+        &self,
+        arguments: &ToolArgs,
+        available_skills: &HashMap<String, Skill>,
+    ) -> Result<String> {
+        let name = tool_arg!(arguments->"name");
+        let args = tool_arg_or_default!(arguments->"args");
+
+        let skill = available_skills
+            .get(name)
+            .ok_or_else(|| anyhow!("Missing skill {name} (invoked by the Skill tool)"))?;
+
+        Ok(skill.body(args))
+    }
 }
 
 impl TryFrom<&str> for Tool {
@@ -170,6 +222,7 @@ impl TryFrom<&str> for Tool {
             "Read" => Ok(Tool::Read),
             "Write" => Ok(Tool::Write),
             "Bash" => Ok(Tool::Bash),
+            "Skill" => Ok(Tool::Skill),
             _ => Err(anyhow!("Unknown tool: {value}")),
         }
     }

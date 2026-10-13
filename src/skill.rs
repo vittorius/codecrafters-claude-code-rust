@@ -10,11 +10,14 @@ pub struct Skill {
     pub name: String,
     pub description: String,
     body: String,
+    // this field prevents the model from attempting to read the skill dir structure
+    // if it doesn't contain any scripts (meant to be invoked by a user)
+    has_scripts: bool,
 }
 
 impl Skill {
     // passing source by value because we make the Skill own the fragments of the source String instead
-    pub fn new(source: &str) -> Result<Self> {
+    pub fn new(source: &str, has_scripts: bool) -> Result<Self> {
         let mut delim_count = 0;
         let mut in_heading = false;
         let mut total_bytes = 0;
@@ -52,6 +55,7 @@ impl Skill {
             body: body
                 .map(str::to_owned)
                 .ok_or_else(|| anyhow!("Missing body"))?,
+            has_scripts,
         })
     }
 
@@ -62,47 +66,52 @@ impl Skill {
                 .replace(&format!("$ARGUMENTS[{i}]"), arg)
                 .replace(&format!("${i}"), arg);
         }
-        format!(
-            "Paths in the instructions below are relative to the {}/{} folder.\n\
-            {}",
-            BASE_PATH, self.name, result
-        )
+
+        if self.has_scripts {
+            format!(
+                "Paths in the instructions below are relative to the {}/{} folder.\n{}",
+                BASE_PATH, self.name, result
+            )
+        } else {
+            result
+        }
     }
 }
 
 pub async fn build_skills() -> Result<HashMap<String, Skill>> {
-    async fn walk(
-        base_path: &Path,
-        visit: &mut impl AsyncFnMut(&Path) -> Result<()>,
-    ) -> Result<()> {
-        let mut dirs = fs::read_dir(base_path).await?;
-        while let Some(skill_dir_entry) = dirs.next_entry().await? {
-            let path = skill_dir_entry.path();
-
-            // file_type() doesn't follow symlinks, so this avoids symlink loops
-            let file_type = skill_dir_entry.file_type().await?;
-            if file_type.is_dir() {
-                let skill_file_path = path.join("SKILL.md");
-                if skill_file_path.exists() {
-                    visit(&skill_file_path).await?;
-                }
-            }
-        }
-        Ok(())
+    async fn is_dir_not_empty(path: &Path) -> Result<bool> {
+        let mut read_dir = fs::read_dir(path).await?;
+        Ok(read_dir.next_entry().await?.is_some())
     }
 
     let mut skills: HashMap<String, Skill> = HashMap::new();
 
-    let skills_path = Path::new(BASE_PATH);
-    if skills_path.exists() {
-        walk(skills_path, &mut async |path| {
-            let source = fs::read_to_string(path).await?;
-            let skill = Skill::new(&source)?;
-            skills.insert(skill.name.clone(), skill);
+    let all_skills_path = Path::new(BASE_PATH);
+    if all_skills_path.exists() {
+        let mut dirs = fs::read_dir(all_skills_path).await?;
+        while let Some(skill_dir_entry) = dirs.next_entry().await? {
+            let skill_dir = skill_dir_entry.path();
+            eprintln!("skill_dir: {}", skill_dir.display());
 
-            Ok(())
-        })
-        .await?;
+            // file_type() doesn't follow symlinks, so this avoids symlink loops
+            let file_type = skill_dir_entry.file_type().await?;
+            if file_type.is_dir() {
+                let skill_file = skill_dir.join("SKILL.md");
+                eprintln!("skill_file: {}", skill_file.display());
+                if skill_file.exists() {
+                    let source = fs::read_to_string(&skill_file).await?;
+                    let scripts_path = skill_dir.join("scripts");
+
+                    eprintln!("before Skill::new()");
+
+                    let skill = Skill::new(
+                        &source,
+                        scripts_path.exists() && is_dir_not_empty(&scripts_path).await?,
+                    )?;
+                    skills.insert(skill.name.clone(), skill);
+                }
+            }
+        }
     }
 
     Ok(skills)
@@ -125,7 +134,7 @@ mod tests {
             Gulp it.\n\
             Repeat until the entire banana it eaten.";
 
-        let skill = Skill::new(source)?;
+        let skill = Skill::new(source, false)?;
 
         assert_eq!(skill.name, "banana");
         assert_eq!(skill.description, "Instructs how to eat a banana.");
