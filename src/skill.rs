@@ -13,6 +13,7 @@ pub struct Skill {
     // this field prevents the model from attempting to read the skill dir structure
     // if it doesn't contain any scripts (meant to be invoked by a user)
     has_scripts: bool,
+    in_subagent: bool,
 }
 
 impl Skill {
@@ -24,6 +25,7 @@ impl Skill {
 
         let mut name = None;
         let mut description = None;
+        let mut in_subagent = false;
         let mut body = None;
 
         for line in source.lines() {
@@ -31,10 +33,17 @@ impl Skill {
                 delim_count += 1;
                 in_heading = delim_count < 2;
             } else if in_heading && let Some((key, value)) = line.split_once(':') {
-                if key == "name" {
-                    name.replace(value.trim());
-                } else if key == "description" {
-                    description.replace(value.trim());
+                match key {
+                    "name" => {
+                        name.replace(value.trim());
+                    }
+                    "description" => {
+                        description.replace(value.trim());
+                    }
+                    "context" if value.trim() == "fork" => {
+                        in_subagent = true;
+                    }
+                    _ => {}
                 }
             } else {
                 body.replace(&source[total_bytes..]);
@@ -56,6 +65,7 @@ impl Skill {
                 .map(str::to_owned)
                 .ok_or_else(|| anyhow!("Missing body"))?,
             has_scripts,
+            in_subagent,
         })
     }
 
@@ -76,6 +86,10 @@ impl Skill {
             result
         }
     }
+
+    pub fn in_subagent(&self) -> bool {
+        self.in_subagent
+    }
 }
 
 pub async fn build_skills() -> Result<HashMap<String, Skill>> {
@@ -91,18 +105,14 @@ pub async fn build_skills() -> Result<HashMap<String, Skill>> {
         let mut dirs = fs::read_dir(all_skills_path).await?;
         while let Some(skill_dir_entry) = dirs.next_entry().await? {
             let skill_dir = skill_dir_entry.path();
-            eprintln!("skill_dir: {}", skill_dir.display());
 
             // file_type() doesn't follow symlinks, so this avoids symlink loops
             let file_type = skill_dir_entry.file_type().await?;
             if file_type.is_dir() {
                 let skill_file = skill_dir.join("SKILL.md");
-                eprintln!("skill_file: {}", skill_file.display());
                 if skill_file.exists() {
                     let source = fs::read_to_string(&skill_file).await?;
                     let scripts_path = skill_dir.join("scripts");
-
-                    eprintln!("before Skill::new()");
 
                     let skill = Skill::new(
                         &source,

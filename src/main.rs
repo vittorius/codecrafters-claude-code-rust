@@ -3,10 +3,15 @@ use clap::Parser;
 use serde_json::{Value, from_str, json};
 use std::{collections::HashMap, env, fmt::Write, process, sync::OnceLock};
 
-use crate::{skill::Skill, tool::Tool};
+use crate::{
+    message::Message,
+    skill::Skill,
+    tool::{Tool, ToolResult},
+};
 
-use anyhow::{Result, anyhow};
+use anyhow::{Result, anyhow, bail};
 
+mod message;
 mod skill;
 mod tool;
 
@@ -21,6 +26,7 @@ struct Args {
 
 // TODO: turn into a Skill::all() method similar to the one of Tool
 static SKILLS: OnceLock<HashMap<String, Skill>> = OnceLock::new();
+static CLIENT: OnceLock<Client<OpenAIConfig>> = OnceLock::new();
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -41,9 +47,13 @@ async fn main() -> Result<()> {
         .with_api_base(base_url)
         .with_api_key(api_key);
 
-    let client = Client::with_config(config);
+    CLIENT.get_or_init(|| Client::with_config(config));
 
-    agent_loop(&client, &args.prompt).await?;
+    let mut initial_messages = vec![Message::System(skills_advertisement()?)];
+    initial_messages.extend(prompt_messages(&args.prompt).into_iter());
+
+    let result = agent_loop(initial_messages).await?;
+    println!("{result}");
 
     // You can use print statements as follows for debugging, they'll be visible when running tests.
     eprintln!("Logs from your program will appear here!");
@@ -51,21 +61,25 @@ async fn main() -> Result<()> {
     Ok(())
 }
 
-async fn agent_loop(client: &Client<OpenAIConfig>, raw_prompt: &str) -> Result<()> {
-    let mut messages: Vec<Value> =
-        vec![json!({ "role": "system", "content": skills_advertisement()? })];
-    messages.extend(
-        prompt_messages(raw_prompt)
-            .into_iter()
-            .map(|msg| json!({ "role": "user", "content": msg })),
-    );
+async fn agent_loop(initial_messages: Vec<Message>) -> ToolResult {
+    let mut messages = initial_messages
+        .into_iter()
+        .map(serde_json::to_value)
+        .map(|res| res.map_err(Into::into))
+        .collect::<Result<Vec<Value>>>()?;
 
     loop {
         // NOTE: we always have a single choice the response for this challenge (use `response["choices"][0]`)
 
-        // eprintln!("request: {messages:#?}");
-        let response: Value = send_request(client, &messages).await?;
-        // eprintln!("response: {response:#?}");
+        #[cfg(debug_assertions)]
+        eprintln!("request: {messages:#?}");
+        
+        let response: Value =
+            send_request(CLIENT.get().expect("Client must be initialized"), &messages).await?;
+        
+        #[cfg(debug_assertions)]
+        eprintln!("response: {response:#?}");
+        
         messages.push(response["choices"][0]["message"].clone());
 
         if let Some(tool_calls) = response["choices"][0]["message"]["tool_calls"].as_array()
@@ -88,9 +102,20 @@ async fn agent_loop(client: &Client<OpenAIConfig>, raw_prompt: &str) -> Result<(
                         .as_object()
                         .ok_or_else(|| anyhow!("Failed to parse tool arguments"))?;
 
-                    let result = tool
-                        .call(arguments, SKILLS.get().expect("Skills must be initialized"))
-                        .await?;
+                    let result = match tool {
+                        Tool::Read(read_tool) => read_tool.call(arguments).await?,
+                        Tool::Write(write_tool) => write_tool.call(arguments).await?,
+                        Tool::Bash(bash_tool) => bash_tool.call(arguments).await?,
+                        Tool::Skill(skill_tool) => {
+                            Box::pin(skill_tool.call(
+                                arguments,
+                                SKILLS.get().expect("Skills must be initialized"),
+                                agent_loop,
+                            ))
+                            .await?
+                        }
+                    };
+
                     messages.push(json!(
                         {
                           "role": "tool",
@@ -101,15 +126,16 @@ async fn agent_loop(client: &Client<OpenAIConfig>, raw_prompt: &str) -> Result<(
                 }
             }
         } else if let Some(content) = response["choices"][0]["message"]["content"].as_str() {
-            println!("{content}");
-            break;
+            return Ok(content.to_owned());
+        } else {
+            bail!(
+                "Unexpected exit from the agent loop: response.choices[0].message.content is not a valid string"
+            )
         }
     }
-
-    Ok(())
 }
 
-fn prompt_messages(raw_prompt: &str) -> Vec<String> {
+fn prompt_messages(raw_prompt: &str) -> Vec<Message> {
     let mut all = raw_prompt;
     let mut head;
     let mut tail;
@@ -129,10 +155,13 @@ fn prompt_messages(raw_prompt: &str) -> Vec<String> {
     }
 
     if skills.is_empty() {
-        return vec![raw_prompt.to_owned()];
+        return vec![Message::User(raw_prompt.to_owned())];
     }
 
-    skills.into_iter().map(|skill| skill.body(all)).collect()
+    skills
+        .into_iter()
+        .map(|skill| Message::User(skill.body(all)))
+        .collect()
 }
 
 async fn send_request(client: &Client<OpenAIConfig>, messages: &[Value]) -> Result<Value> {

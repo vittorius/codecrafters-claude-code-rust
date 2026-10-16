@@ -211,6 +211,7 @@ dependencies = [
  "anyhow",
  "async-openai",
  "clap",
+ "serde",
  "serde_json",
  "tokio",
 ]
