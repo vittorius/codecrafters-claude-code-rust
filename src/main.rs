@@ -24,7 +24,6 @@ struct Args {
 
 // TODO: try rewriting this challenge using `types` and/or *-types feature(s) from the openai-async crate
 
-// TODO: turn into a Skill::all() method similar to the one of Tool
 static SKILLS: OnceLock<HashMap<String, Skill>> = OnceLock::new();
 static CLIENT: OnceLock<Client<OpenAIConfig>> = OnceLock::new();
 
@@ -33,7 +32,7 @@ async fn main() -> Result<()> {
     let skills = skill::build_skills().await?;
     SKILLS.get_or_init(move || skills);
 
-    let args = Args::parse();
+    let args = Args::parse(); // exits on error
 
     let base_url = env::var("OPENROUTER_BASE_URL")
         .unwrap_or_else(|_| "https://openrouter.ai/api/v1".to_string());
