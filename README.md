@@ -1,3 +1,5 @@
+# "Build Your own Claude Code" Challenge
+
 [![progress-banner](https://backend.codecrafters.io/progress/claude-code/d8e08671-ae7e-4981-b886-e358368dc0b4)](https://app.codecrafters.io/users/vittorius?r=2qF)
 
 This is a starting point for Rust solutions to the
@@ -14,7 +16,7 @@ calling, agent loop, and how to integrate multiple tools into an AI assistant.
 **Note**: If you're viewing this repo on GitHub, head over to
 [codecrafters.io](https://codecrafters.io) to try the challenge.
 
-# Passing the first stage
+## Passing the first stage
 
 The entry point for your `claude-code` implementation is in `src/main.rs`. Study
 and uncomment the relevant code, and submit to pass the first stage:
@@ -23,7 +25,7 @@ and uncomment the relevant code, and submit to pass the first stage:
 codecrafters submit
 ```
 
-# Stage 2 & beyond
+## Stage 2 & beyond
 
 Note: This section is for stages 2 and beyond.
 
