@@ -23,4 +23,4 @@ set -e # Exit early if any commands fail
 # - Edit this to change how your program runs locally
 # - Edit .codecrafters/run.sh to change how your program runs remotely
 exec /tmp/codecrafters-build-claude-code-rust/release/codecrafters-claude-code "$@"
-# OPENROUTER_API_KEY=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 exec /tmp/codecrafters-build-claude-code-rust/debug/codecrafters-claude-code "$@"
+# OPENROUTER_API_KEY="my key" exec /tmp/codecrafters-build-claude-code-rust/debug/codecrafters-claude-code "$@"
