@@ -70,12 +70,13 @@ impl Skill {
     }
 
     pub fn body(&self, args_str: &str) -> String {
-        let mut result = self.body.replace("$ARGUMENTS", args_str);
+        let mut result = self.body.clone();
         for (i, arg) in args_str.split(' ').enumerate() {
             result = result
                 .replace(&format!("$ARGUMENTS[{i}]"), arg)
                 .replace(&format!("${i}"), arg);
         }
+        result = result.replace("$ARGUMENTS", args_str);
 
         if self.has_scripts {
             format!(
@@ -154,6 +155,33 @@ mod tests {
             Then bite the banana and chew the piece you've bitten.\n\
             Gulp it.\n\
             Repeat until the entire banana it eaten."
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_skill_arguments_substitution() -> Result<()> {
+        #[rustfmt::skip]
+        let source =
+            "---\n\
+            name: cake\n\
+            description: It's a generic recipe for the cake.\n\
+            ---\n\
+            Take 1 spoon of $ARGUMENTS[0], 2 glasses of $ARGUMENTS[1], and a handful of $ARGUMENTS[2].\n\
+            Put all of that ($ARGUMENTS) in a bowl and mix with a mixer.\n\
+            Then, fill the 0.5 liter form with the mixed dough.\n\
+            Put the form into the stove and set the temperature to 250 °C.\n\
+            Bake for 40 minutes.\n";
+
+        let skill = Skill::new(source, false)?;
+        assert_eq!(
+            skill.body("flour sugar raisins"),
+            "Take 1 spoon of flour, 2 glasses of sugar, and a handful of raisins.\n\
+            Put all of that (flour sugar raisins) in a bowl and mix with a mixer.\n\
+            Then, fill the 0.5 liter form with the mixed dough.\n\
+            Put the form into the stove and set the temperature to 250 °C.\n\
+            Bake for 40 minutes.\n"
         );
 
         Ok(())
